@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -12,7 +13,7 @@ import { Loader2, DownloadCloud, AlertTriangle } from 'lucide-react';
 import { Toaster } from "@/components/ui/toaster";
 import { useToast } from "@/hooks/use-toast";
 
-const imageStyles: Array<GenerateImageInput['style']> = ['Realistic', 'Anime', 'Cyberpunk', 'Fantasy'];
+const imageStyles: Array<GenerateImageInput['style']> = ['Realistic', 'Anime', 'Cyberpunk', 'Fantasy', 'Ghibli'];
 
 export default function PromptPixelPage() {
   const [prompt, setPrompt] = useState<string>("");
@@ -29,10 +30,11 @@ export default function PromptPixelPage() {
 
   const handleGenerateImage = async () => {
     if (!prompt.trim()) {
-      setError("Please describe the image you want to create.");
+      const msg = "Please describe the image you want to create.";
+      setError(msg);
       toast({
         title: "Missing Prompt",
-        description: "Please describe the image you want to create.",
+        description: msg,
         variant: "destructive",
       });
       return;
@@ -44,18 +46,40 @@ export default function PromptPixelPage() {
 
     try {
       const result: GenerateImageOutput = await generateImage({ prompt, style });
-      setImageUrl(result.imageUrl);
-      toast({
-        title: "Image Generated!",
-        description: "Your masterpiece is ready.",
-      });
-    } catch (err) {
-      console.error("Image generation failed:", err);
-      const errorMessage = err instanceof Error ? err.message : "An unknown error occurred during image generation.";
+      
+      if (result.error) {
+        console.error("Image generation failed with flow error:", result.error);
+        setError(result.error);
+        toast({
+          title: "Generation Failed",
+          description: result.error,
+          variant: "destructive",
+        });
+      } else if (result.imageUrl) {
+        setImageUrl(result.imageUrl);
+        toast({
+          title: "Image Generated!",
+          description: "Your masterpiece is ready.",
+        });
+      } else {
+        // This case should ideally not be reached if the flow always returns imageUrl or error
+        const unexpectedErrorMsg = "Image generation returned an unexpected response.";
+        console.error(unexpectedErrorMsg);
+        setError(unexpectedErrorMsg);
+        toast({
+            title: "Generation Failed",
+            description: unexpectedErrorMsg,
+            variant: "destructive",
+        });
+      }
+    } catch (err) { // This catch block handles fundamental errors with the server action call itself
+      console.error("Error calling generateImage server action:", err);
+      // In production, err.message here might be the generic Next.js message
+      const errorMessage = err instanceof Error ? err.message : "An unknown server error occurred. Please check logs.";
       setError(errorMessage);
       toast({
-        title: "Generation Failed",
-        description: errorMessage,
+        title: "Server Error",
+        description: "Failed to communicate with the image generation service. " + errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -90,7 +114,7 @@ export default function PromptPixelPage() {
     } catch (downloadError) {
       console.error('Error downloading image:', downloadError);
       const errorMessage = downloadError instanceof Error ? downloadError.message : "Could not download image.";
-      setError(errorMessage); // Also show in main error display if needed
+      setError(errorMessage); 
       toast({
         title: "Download Failed",
         description: errorMessage,
@@ -100,9 +124,6 @@ export default function PromptPixelPage() {
   };
 
   if (!isMounted) {
-    // Render a placeholder or null during server-side rendering/hydration phase
-    // to avoid hydration mismatches if any client-only logic runs immediately.
-    // For this app structure, it's mostly for robust handling.
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
          <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -211,3 +232,4 @@ export default function PromptPixelPage() {
     </div>
   );
 }
+

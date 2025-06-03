@@ -15,13 +15,14 @@ import {z} from 'genkit';
 const GenerateImageInputSchema = z.object({
   prompt: z.string().describe('The prompt to use to generate the image.'),
   style: z
-    .enum(['Realistic', 'Anime', 'Cyberpunk', 'Fantasy'])
+    .enum(['Realistic', 'Anime', 'Cyberpunk', 'Fantasy', 'Ghibli'])
     .describe('The style of the image.'),
 });
 export type GenerateImageInput = z.infer<typeof GenerateImageInputSchema>;
 
 const GenerateImageOutputSchema = z.object({
-  imageUrl: z.string().describe('The generated image as a data URI.'),
+  imageUrl: z.string().optional().describe('The generated image as a data URI.'),
+  error: z.string().optional().describe('An error message if image generation failed.'),
 });
 export type GenerateImageOutput = z.infer<typeof GenerateImageOutputSchema>;
 
@@ -37,7 +38,7 @@ export async function generateImage(
 const generateImagePrompt = ai.definePrompt({
   name: 'generateImagePrompt',
   input: {schema: GenerateImageInputSchema},
-  output: {schema: GenerateImageOutputSchema},
+  output: {schema: GenerateImageOutputSchema}, // Note: This schema might need adjustment if prompt was used directly
   prompt: `Generate an image in the style of {{{style}}} based on the following prompt: {{{prompt}}}.`,
 });
 
@@ -47,18 +48,31 @@ const generateImageFlow = ai.defineFlow(
     inputSchema: GenerateImageInputSchema,
     outputSchema: GenerateImageOutputSchema,
   },
-  async input => {
-    const {media} = await ai.generate({
-      model: 'googleai/gemini-2.0-flash-exp', // Explicitly use the image generation model
-      prompt: `Generate an image in the style of ${input.style} based on the following prompt: ${input.prompt}.`, // Incorporate style into the prompt
-      config: {responseModalities: ['TEXT', 'IMAGE']},
-    });
+  async (input): Promise<GenerateImageOutput> => {
+    try {
+      const {media} = await ai.generate({
+        model: 'googleai/gemini-2.0-flash-exp', 
+        prompt: `Generate an image in the style of ${input.style} based on the following prompt: ${input.prompt}.`,
+        config: {responseModalities: ['TEXT', 'IMAGE']},
+      });
 
-    if (!media || !media.url) {
-      throw new Error('Image generation failed or returned no media URL. The prompt might have been blocked by safety filters.');
+      if (!media || !media.url) {
+        console.warn('Image generation returned no media URL. Prompt:', input.prompt, 'Style:', input.style);
+        return { error: 'Image generation failed. This might be due to safety filters or an issue with the generated content. Try a different prompt or style.' };
+      }
+
+      return {imageUrl: media.url};
+    } catch (flowError: any) {
+      console.error('Critical error in generateImageFlow. Input:', input, 'Error:', flowError);
+      // Log the full error server-side for Vercel logs
+      // Return a user-friendly error to the client
+      let userMessage = 'An unexpected error occurred during image generation. Please try again later.';
+      if (flowError.message && flowError.message.includes('API key')) {
+        userMessage = 'Image generation service is not configured correctly. Administrator check server logs.';
+      }
+      // Add more specific error message mapping here if Genkit provides identifiable error types/codes for common issues like quota.
+      return { error: userMessage };
     }
-
-    return {imageUrl: media.url}; // Use the validated media.url
   }
 );
 
